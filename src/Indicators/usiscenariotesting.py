@@ -14,7 +14,7 @@ def fetch_real_data(symbol="TSLA", start_date="2023-01-01", end_date=None):
     # 🔹 Handle missing values
     return df['Close'].dropna()
 
-#  Scenario Simulation Agent
+# Scenario Simulation Agent
 class ScenarioSimulationAgent:
     @staticmethod
     def generate_market_scenario(dates, base_price=100, scenario_type="high_volatility"):
@@ -44,7 +44,7 @@ def calculate_rsi(prices, period=14):
     prices = np.asarray(prices).flatten()  # Ensure 1D array
     
     if len(prices) == 0:
-        raise ValueError("❌ Price data is empty. Check data fetching process.")
+        raise ValueError(" Price data is empty. Check data fetching process.")
 
     delta = np.diff(prices, prepend=prices[0])  # Calculate price changes
     gain = np.where(delta > 0, delta, 0)
@@ -71,20 +71,51 @@ def calculate_macd(prices, short_window=12, long_window=26, signal_window=9):
 
     return macd.values, signal.values
 
+#  Ultimate Strength Index (USI) Calculation
+def calculate_usi(prices, period=14):
+    su, sd = calculate_su_sd(prices)
+    usu, usd = ultimate_smoother(su, period), ultimate_smoother(sd, period)
+
+    usi = np.zeros(len(prices))
+    valid_idx = (usu + usd > 0) & (usu > 0.01) & (usd > 0.01)
+    usi[valid_idx] = (usu[valid_idx] - usd[valid_idx]) / (usu[valid_idx] + usd[valid_idx])
+    
+    return usi
+
+def calculate_su_sd(prices):
+    prices = np.asarray(prices).flatten()
+    su = np.maximum(np.diff(prices, prepend=prices[0]), 0)
+    sd = np.maximum(-np.diff(prices, prepend=prices[0]), 0)
+    return su, sd
+
+def ultimate_smoother(data, period):
+    a1 = np.exp(-1.414 * np.pi / period)
+    b1 = 2 * a1 * np.cos(1.414 * 180 / period)
+    c2, c3 = b1, -a1 * a1
+    c1 = (1 + c2 - c3) / 4
+
+    smoothed = np.zeros_like(data)
+    for i in range(len(data)):
+        smoothed[i] = data[i] if i < 3 else (
+            (1 - c1) * data[i] + (2 * c1 - c2) * data[i - 1] - (c1 + c3) * data[i - 2] + c2 * smoothed[i - 1] + c3 * smoothed[i - 2]
+        )
+    return smoothed
+
 #  Visualization Agent
 class VisualizationAgent:
     @staticmethod
-    def plot_comparison(dates, real_prices, simulated_prices, real_rsi, simulated_rsi, real_macd, real_signal, simulated_macd, simulated_signal):
+    def plot_comparison(dates, real_prices, simulated_prices, real_rsi, simulated_rsi, real_macd, real_signal, simulated_macd, simulated_signal, real_usi, simulated_usi):
         fig = make_subplots(
-            rows=3, cols=2,
+            rows=4, cols=2,
             subplot_titles=("Real TSLA Price", "Simulated High Volatility",
                             "RSI (Real)", "RSI (Simulated)",
-                            "MACD (Real)", "MACD (Simulated)"),
+                            "MACD (Real)", "MACD (Simulated)",
+                            "USI (Real)", "USI (Simulated)"),
             shared_xaxes=True,
             vertical_spacing=0.1
         )
 
-        # Price Comparison
+        #  Price Comparison
         fig.add_trace(go.Scatter(x=dates, y=real_prices, mode='lines', name='Real TSLA', line=dict(color='blue')), row=1, col=1)
         fig.add_trace(go.Scatter(x=dates, y=simulated_prices, mode='lines', name='Simulated', line=dict(color='orange')), row=1, col=2)
 
@@ -98,23 +129,24 @@ class VisualizationAgent:
         fig.add_trace(go.Scatter(x=dates, y=simulated_macd, mode='lines', name='MACD (Simulated)', line=dict(color='green', dash='dot')), row=3, col=2)
         fig.add_trace(go.Scatter(x=dates, y=simulated_signal, mode='lines', name='Signal (Simulated)', line=dict(color='red', dash='dot')), row=3, col=2)
 
-        fig.update_layout(title="Real Tesla Data vs Simulated High Volatility", template="plotly_white", height=900, width=1200)
+        #  USI Comparison
+        fig.add_trace(go.Scatter(x=dates, y=real_usi, mode='lines', name='USI (Real)', line=dict(color='blue')), row=4, col=1)
+        fig.add_trace(go.Scatter(x=dates, y=simulated_usi, mode='lines', name='USI (Simulated)', line=dict(color='orange')), row=4, col=2)
+
+        fig.update_layout(title="Real Tesla Data vs Simulated High Volatility (With USI)", template="plotly_white", height=1200, width=1400)
         fig.show()
 
 #  Scenario Testing
 if __name__ == "__main__":
-    #  Fetch Real Tesla Data
     real_prices = fetch_real_data(symbol="TSLA", start_date="2023-01-01")
     dates = real_prices.index
-
-    #  Simulate High Volatility Scenario
     simulated_prices = ScenarioSimulationAgent.generate_market_scenario(dates, base_price=real_prices.iloc[0], scenario_type="high_volatility")
 
-    #  Calculate Indicators
     real_rsi = calculate_rsi(real_prices.values)
     simulated_rsi = calculate_rsi(simulated_prices)
     real_macd, real_signal = calculate_macd(real_prices.values)
     simulated_macd, simulated_signal = calculate_macd(simulated_prices)
+    real_usi = calculate_usi(real_prices.values)
+    simulated_usi = calculate_usi(simulated_prices)
 
-    #  Compare Real vs Simulated Data
-    VisualizationAgent.plot_comparison(dates, real_prices, simulated_prices, real_rsi, simulated_rsi, real_macd, real_signal, simulated_macd, simulated_signal)
+    VisualizationAgent.plot_comparison(dates, real_prices, simulated_prices, real_rsi, simulated_rsi, real_macd, real_signal, simulated_macd, simulated_signal, real_usi, simulated_usi)
