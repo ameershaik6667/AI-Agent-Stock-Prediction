@@ -55,9 +55,9 @@ class IchimokuAnalysisAgents:
             ]
         )
 
-    def ichimoku_cloud_analysis(self, agent, ichimoku_data):
+    def ichimoku_cloud_analysis(self, agent, ichimoku_data, current_price):
         """
-        Creates a task for the agent to analyze the latest Ichimoku Cloud indicator data and provide a recommendation.
+        Creates a task for the agent to analyze the latest Ichimoku Cloud indicator data along with the current stock price and provide a recommendation.
         """
         # Extract the latest indicator values from the provided DataFrame.
         latest_tenkan = ichimoku_data['tenkan_sen'].iloc[-1]
@@ -66,23 +66,24 @@ class IchimokuAnalysisAgents:
         latest_senkou_b = ichimoku_data['senkou_span_b'].iloc[-1]
         latest_chikou = ichimoku_data['chikou_span'].iloc[-1]
 
-        # Create a descriptive task message including the extracted indicator values.
+        # Create a descriptive task message including the extracted indicator values and the current stock price.
         description = dedent(f"""
-            Analyze the latest Ichimoku Cloud indicator data:
+            Analyze the latest Ichimoku Cloud indicator data along with the current stock price:
+            - Current Stock Price: {current_price}
             - Tenkan-sen (Conversion Line): {latest_tenkan}
             - Kijun-sen (Base Line): {latest_kijun}
             - Senkou Span A (Leading Span A): {latest_senkou_a}
             - Senkou Span B (Leading Span B): {latest_senkou_b}
             - Chikou Span (Lagging Span): {latest_chikou}
 
-            Based on these values and the current market conditions, provide a very detailed investment recommendation and explaination.
-            Your final answer should clearly indicate whether to BUY, SELL, or HOLD, along with supporting reasoning with detailed explaination.
+            Based on these values and the current market conditions, provide a very detailed investment recommendation and explanation.
+            Your final answer should clearly indicate whether to BUY, SELL, or HOLD, along with supporting reasoning and detailed explanation.
         """)
 
         return Task(
             description=description,
             agent=agent,
-            expected_output="A very detailed analysis and explaination and a clear buy, sell, or hold recommendation based on the Ichimoku Cloud data."
+            expected_output="A very detailed analysis and explanation and a clear buy, sell, or hold recommendation based on the Ichimoku Cloud data and current stock price."
         )
 
 # ----- Data Fetching Functions -----
@@ -131,6 +132,22 @@ def fetch_realtime_data(ticker_symbol):
             return None
     except Exception as e:
         st.error(f"Error fetching real-time data: {e}")
+        return None
+
+def fetch_current_price(symbol: str):
+    """
+    Fetch the current stock price for the given symbol using yahooquery.
+    """
+    try:
+        ticker = Ticker(symbol)
+        price_data = ticker.price
+        if price_data and symbol in price_data and 'regularMarketPrice' in price_data[symbol]:
+            return price_data[symbol]['regularMarketPrice']
+        else:
+            st.error("Failed to fetch current price from ticker.price.")
+            return None
+    except Exception as e:
+        st.error(f"Error fetching current price: {e}")
         return None
 
 # ----- Ichimoku Cloud Calculation Class -----
@@ -252,11 +269,17 @@ def main():
             st.error("Please calculate the Ichimoku Cloud data first.")
         else:
             ichimoku_data = st.session_state.ichimoku_data
+            # Fetch current stock price using the new function.
+            current_price = fetch_current_price(ticker_symbol)
+            if current_price is None:
+                st.error("Current price data not available.")
+                return
+            
             # Initialize the custom agents for analysis.
             agents = IchimokuAnalysisAgents()
             advisor_agent = agents.ichimoku_cloud_investment_advisor()
-            # Create a task with the calculated indicator data.
-            analysis_task = agents.ichimoku_cloud_analysis(advisor_agent, ichimoku_data)
+            # Create a task with the calculated indicator data and current stock price.
+            analysis_task = agents.ichimoku_cloud_analysis(advisor_agent, ichimoku_data, current_price)
             # Create a Crew to manage the agent and task execution.
             crew = Crew(
                 agents=[advisor_agent],
