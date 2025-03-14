@@ -48,6 +48,26 @@ if st.button("Calculate RSI"):
     st.write(f"Stock Data with RSI{period} for {symbol}:")
     st.dataframe(data.tail())
 
+class TradingStrategyAgent:
+    def generate_trading_signal(self, sentiment_score):
+        if sentiment_score > 0.2:
+            return "BUY"
+        elif sentiment_score < -0.2:
+            return "SELL"
+        return "HOLD"
+
+    def backtest_strategy(self, data):
+        capital = 10000
+        position = 0
+        for i in range(1, len(data)):
+            if data["Signal"].iloc[i-1] == "BUY":
+                position = capital / data["Close"].iloc[i]
+                capital = 0
+            elif data["Signal"].iloc[i-1] == "SELL" and position > 0:
+                capital = position * data["Close"].iloc[i]
+                position = 0
+        return capital + (position * data["Close"].iloc[-1] if position > 0 else 0)
+
 class DataCollectionAgent:
     def fetch_news_articles(self, symbol):
         url = f"https://finnhub.io/api/v1/news?category=general&token=cuik1g1r01qtqfmisj9gcuik1g1r01qtqfmisja0"
@@ -59,7 +79,7 @@ class DataCollectionAgent:
 
     def collect_social_media_data(self, symbol):
         sample_posts = [
-            f"{symbol} is on the rise! 🚀 #bullish",
+            f"{symbol} is on the rise!",
             f"Worried about {symbol}'s volatility today...",
             f"Market analysts predict a strong quarter for {symbol}.",
         ]
@@ -69,60 +89,11 @@ class DataCollectionAgent:
         stock = yf.Ticker(symbol)
         return stock.financials
 
-    def preprocess_data(self, data):
-        return data.dropna()
-
-    def exploratory_data_analysis(self, data):
-        plt.figure(figsize=(8, 4))
-        sns.histplot(data['Close'], bins=30, kde=True)
-        st.pyplot(plt)
-
 class SentimentAnalysisAgent:
     def analyze_text_sentiment(self, text):
         sentiment_score = TextBlob(text).sentiment.polarity
         sentiment = "Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral"
         return sentiment_score, sentiment
-
-    def extract_sentiment_features(self, texts):
-        return [TextBlob(text).sentiment.polarity for text in texts]
-
-    def train_ml_model(self, data, labels):
-        vectorizer = CountVectorizer()
-        tfidf_transformer = TfidfTransformer()
-        X_counts = vectorizer.fit_transform(data)
-        X_tfidf = tfidf_transformer.fit_transform(X_counts)
-        clf = MultinomialNB().fit(X_tfidf, labels)
-        return clf, vectorizer, tfidf_transformer
-
-    def train_dl_model(self, data, labels, max_words=5000, max_len=100):
-        tokenizer = Tokenizer(num_words=max_words)
-        tokenizer.fit_on_texts(data)
-        sequences = tokenizer.texts_to_sequences(data)
-        X = pad_sequences(sequences, maxlen=max_len)
-
-        model = Sequential([
-            Embedding(max_words, 128, input_length=max_len),
-            LSTM(64, return_sequences=True),
-            LSTM(32),
-            Dense(1, activation='sigmoid')
-        ])
-        model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-        model.fit(X, labels, epochs=5, batch_size=32, verbose=1)
-        return model, tokenizer
-
-    def implement_model_stacking(self, data, labels):
-        vectorizer = CountVectorizer()
-        tfidf_transformer = TfidfTransformer()
-        X_counts = vectorizer.fit_transform(data)
-        X_tfidf = tfidf_transformer.fit_transform(X_counts)
-
-        base_models = [
-            ('nb', MultinomialNB()),
-            ('svm', SVC(probability=True))
-        ]
-        stacked_model = StackingClassifier(estimators=base_models, final_estimator=LogisticRegression())
-        stacked_model.fit(X_tfidf, labels)
-        return stacked_model, vectorizer, tfidf_transformer
 
     def analyze_news_sentiment(self, articles):
         results = []
@@ -140,6 +111,7 @@ class SentimentAnalysisAgent:
 
 data_agent = DataCollectionAgent()
 sentiment_agent = SentimentAnalysisAgent()
+strategy_agent = TradingStrategyAgent()
 
 if st.button("Fetch News Articles"):
     articles = data_agent.fetch_news_articles(symbol)
@@ -151,32 +123,29 @@ if st.button("Fetch News Articles"):
 if st.button("Analyze News Sentiment"):
     articles = data_agent.fetch_news_articles(symbol)
     sentiment_results = sentiment_agent.analyze_news_sentiment(articles)
+    signals = []
     for result in sentiment_results:
-        st.write(f"**{result['headline']}** - Sentiment: {result['sentiment']} (Score: {result['score']:.2f})")
+        signal = strategy_agent.generate_trading_signal(result["score"])
+        signals.append(signal)
+        st.write(f"**{result['headline']}** - Sentiment: {result['sentiment']} (Score: {result['score']:.2f}) - Signal: {signal}")
         st.write("---")
 
 if st.button("Analyze Social Media Sentiment"):
     posts = data_agent.collect_social_media_data(symbol)
     sentiment_results = sentiment_agent.analyze_social_media_sentiment(posts)
+    signals = []
+    for result in sentiment_results:
+        signal = strategy_agent.generate_trading_signal(result["score"])
+        signals.append(signal)
     sentiment_df = pd.DataFrame(sentiment_results)
+    sentiment_df["Signal"] = signals
     st.write("Social Media Sentiment Analysis:")
     st.dataframe(sentiment_df)
     st.bar_chart(sentiment_df.set_index("post")["score"])
 
-if st.button("Train ML Model"):
-    data_samples = ["The market is up!", "Stocks are falling", "Stable outlook"]
-    labels = [1, 0, 1]
-    ml_model, vectorizer, tfidf = sentiment_agent.train_ml_model(data_samples, labels)
-    st.write("Machine Learning Model Trained Successfully!")
-
-if st.button("Train DL Model"):
-    data_samples = ["The stock is bullish", "Bearish trend continues", "Investors are optimistic"]
-    labels = [1, 0, 1]
-    dl_model, tokenizer = sentiment_agent.train_dl_model(data_samples, labels)
-    st.write("Deep Learning Model Trained Successfully!")
-
-if st.button("Implement Model Stacking"):
-    data_samples = ["Bullish trend expected", "Stock market crashes", "Positive earnings report"]
-    labels = [1, 0, 1]
-    stacked_model, vectorizer, tfidf = sentiment_agent.implement_model_stacking(data_samples, labels)
-    st.write("Model Stacking Implemented Successfully!")
+if st.button("Backtest Strategy"):
+    if "Signal" in data.columns:
+        final_capital = strategy_agent.backtest_strategy(data)
+        st.write(f"Final capital after backtesting: ${final_capital:.2f}")
+    else:
+        st.write("No trading signals available for backtesting.")
