@@ -1,23 +1,42 @@
-import yfinance as yf
+import os
 import pandas as pd
 import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
+import yfinance as yf
+from yahooquery import Ticker  # For fetching current stock price
 
 # -------------------------------------------
-# Function to fetch stock data from Yahoo Finance
+# CrewAI and OpenAI imports
+# -------------------------------------------
+from crewai import Agent, Task, Crew
+from textwrap import dedent
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+
+# Load environment variables (e.g., API keys)
+load_dotenv()
+
+# Initialize the OpenAI GPT model for CrewAI agents
+gpt_model = ChatOpenAI(
+    temperature=0.7,
+    model_name="gpt-4o"
+)
+
+# -------------------------------------------
+# Function to fetch historical or real-time stock data using yfinance
 # -------------------------------------------
 def fetch_stock_data(ticker: str, period: str, interval: str) -> pd.DataFrame:
     """
     Fetch stock data for the given ticker symbol using yfinance.
     
     Parameters:
-    - ticker: Stock ticker symbol (e.g., 'AAPL').
-    - period: Data period to fetch (e.g., '1y' or '1d').
-    - interval: Data interval (e.g., '1d' for historical, '1m' for real-time).
+        ticker: Stock ticker symbol (e.g., 'AAPL').
+        period: Data period to fetch (e.g., '1y' or '1d').
+        interval: Data interval (e.g., '1d' for historical, '1m' for real-time).
     
     Returns:
-    - DataFrame containing the stock data.
+        DataFrame containing the stock data.
     """
     try:
         data = yf.download(ticker, period=period, interval=interval)
@@ -33,7 +52,7 @@ def fetch_stock_data(ticker: str, period: str, interval: str) -> pd.DataFrame:
 # -------------------------------------------
 def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
-    If the DataFrame has MultiIndex columns, flatten them.
+    Flatten MultiIndex columns in the DataFrame, if they exist.
     """
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [' '.join([str(i) for i in col]).strip() for col in df.columns.values]
@@ -44,8 +63,8 @@ def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
 # -------------------------------------------
 def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Convert column names to lowercase, remove extra whitespace, and if all columns share a common trailing token,
-    remove that trailing token.
+    Convert column names to lowercase, remove extra whitespace, and if all columns share
+    a common trailing token, remove that trailing token.
     """
     df.columns = df.columns.str.lower().str.strip()
     cols = df.columns.tolist()
@@ -58,21 +77,21 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # -------------------------------------------
-# Function to calculate the Mass Index
+# Function to calculate the Mass Index indicator
 # -------------------------------------------
 def calculate_mass_index(data: pd.DataFrame, ema_period: int = 9, sum_period: int = 25) -> pd.Series:
     """
-    Calculate the Mass Index indicator.
-    
+    Calculate the Mass Index indicator using the daily range (high - low).
+
     Parameters:
-    - data: DataFrame containing at least 'high' and 'low' columns.
-    - ema_period: Period for calculating the exponential moving averages.
-    - sum_period: Look-back period over which to sum the EMA ratio.
+        data: DataFrame containing at least 'high' and 'low' columns.
+        ema_period: Period for calculating the exponential moving averages.
+        sum_period: Look-back period over which to sum the EMA ratio.
     
     Returns:
-    - A Pandas Series representing the Mass Index.
+        A Pandas Series representing the Mass Index.
     """
-    # Flatten columns and standardize names
+    # Flatten and standardize column names
     data = flatten_columns(data)
     data = standardize_columns(data)
     
@@ -81,16 +100,92 @@ def calculate_mass_index(data: pd.DataFrame, ema_period: int = 9, sum_period: in
         st.error(f"Data must contain columns: {required_cols}. Available columns: {list(data.columns)}")
         return pd.Series(dtype=float)
     
+    # Calculate the daily price range
     price_range = data['high'] - data['low']
+    
+    # Calculate the exponential moving averages (EMA)
     ema_range = price_range.ewm(span=ema_period, adjust=False).mean()
     ema_ema_range = ema_range.ewm(span=ema_period, adjust=False).mean()
+    
+    # Compute the ratio of the two EMAs
     ratio = ema_range / ema_ema_range
+    
+    # Calculate the Mass Index as the rolling sum of the ratio
     mass_index = ratio.rolling(window=sum_period).sum()
     
     return mass_index
 
 # -------------------------------------------
-# Streamlit UI Code with Real-Time and Historical Data Integration
+# Function to fetch the current stock price using yahooquery
+# -------------------------------------------
+def fetch_current_price(symbol: str):
+    """
+    Fetch the current stock price for the given symbol using yahooquery's ticker.price.
+
+    Parameters:
+        symbol: Stock symbol to fetch the current price for.
+    
+    Returns:
+        The current stock price if successful, otherwise None.
+    """
+    try:
+        ticker = Ticker(symbol)
+        price_data = ticker.price
+        if price_data and symbol in price_data and 'regularMarketPrice' in price_data[symbol]:
+            return price_data[symbol]['regularMarketPrice']
+        else:
+            st.error("Failed to fetch current price from ticker.price.")
+            return None
+    except Exception as e:
+        st.error(f"Error fetching current price: {e}")
+        return None
+
+# -------------------------------------------
+# CrewAI Agent Code for Mass Index Investment Decision
+# -------------------------------------------
+class MassIndexAnalysisAgents:
+    def mass_index_investment_advisor(self):
+        """
+        Returns an agent that analyzes Mass Index data and current stock price to provide actionable investment recommendations.
+        """
+        return Agent(
+            llm=gpt_model,
+            role="Mass Index Investment Advisor",
+            goal="Provide actionable investment recommendations (buy, sell, or hold) based on Mass Index data and current stock price.",
+            backstory=("You are an experienced technical analyst specializing in volatility indicators. "
+                       "Analyze the latest Mass Index value alongside the current stock price to provide clear buy, sell, or hold signals."),
+            verbose=True,
+            tools=[]  # Additional tools can be added as needed
+        )
+
+    def mass_index_analysis(self, agent, mass_index_value, current_price):
+        """
+        Create a task for the agent to analyze the Mass Index value and current stock price, then provide an investment recommendation.
+
+        Parameters:
+            agent: The CrewAI agent instance.
+            mass_index_value: The latest Mass Index value.
+            current_price: The current stock price.
+        
+        Returns:
+            A Task object for the agent.
+        """
+        description = dedent(f"""
+            Analyze the following data:
+            - Mass Index: {mass_index_value}
+            - Current Stock Price: {current_price}
+
+            Based on these values and the current market conditions, provide a clear investment recommendation.
+            Your final answer should clearly indicate whether to BUY, SELL, or HOLD, along with supporting reasoning.
+        """)
+        return Task(
+            description=description,
+            agent=agent,
+            expected_output="A detailed analysis and a clear buy, sell, or hold recommendation based on the Mass Index and current stock price."
+        )
+
+# -------------------------------------------
+# Main Streamlit UI Code with Data Integration and CrewAI Investment Decision
 # -------------------------------------------
 def main():
     st.title("Stock Data and Mass Index Calculator")
@@ -146,6 +241,7 @@ def main():
             st.subheader("Fetched Stock Data")
             if show_raw_table:
                 st.dataframe(stock_data.tail(10))
+            # Store the fetched data in session state for later use
             st.session_state['stock_data'] = stock_data
         else:
             st.error("Failed to fetch data. Please check the ticker symbol and parameters.")
@@ -162,6 +258,10 @@ def main():
             # Append the Mass Index to the data for visualization
             stock_data_with_mi = stock_data.copy()
             stock_data_with_mi['mass index'] = mass_index_series
+            
+            # Store the Mass Index series in session state for CrewAI use
+            st.session_state['mass_index_series'] = mass_index_series
+            st.session_state['stock_data_with_mi'] = stock_data_with_mi
             
             # Plot the Mass Index Chart
             st.subheader("Mass Index Chart")
@@ -200,12 +300,51 @@ def main():
                 st.subheader("Data with Mass Index")
                 st.dataframe(stock_data_with_mi.tail(10))
             
-            # Download button for CSV export
+            # Provide a download button for CSV export
             csv_data = stock_data_with_mi.to_csv().encode('utf-8')
             st.download_button(label="Download Data as CSV",
                                data=csv_data,
                                file_name=f"{ticker}_mass_index.csv",
                                mime='text/csv')
+    
+    # -------------------------------------------
+    # Button to Get Investment Decision using CrewAI for Mass Index
+    # -------------------------------------------
+    if st.sidebar.button("Get Investment Decision for Mass Index"):
+        # Check if the Mass Index data is available in session state
+        if 'mass_index_series' not in st.session_state:
+            st.error("Please calculate the Mass Index first.")
+        else:
+            mass_index_series = st.session_state['mass_index_series']
+            # Get the latest non-NaN Mass Index value
+            try:
+                latest_mass_index = mass_index_series.dropna().iloc[-1]
+            except Exception as e:
+                st.error(f"Error retrieving latest Mass Index value: {e}")
+                latest_mass_index = None
+            
+            # Fetch the current stock price using yahooquery
+            current_price = fetch_current_price(ticker)
+            
+            if latest_mass_index is None or current_price is None:
+                st.error("Unable to retrieve necessary data for investment decision.")
+            else:
+                # Create the CrewAI agent and task for Mass Index analysis
+                agents = MassIndexAnalysisAgents()
+                advisor_agent = agents.mass_index_investment_advisor()
+                analysis_task = agents.mass_index_analysis(advisor_agent, latest_mass_index, current_price)
+                
+                # Initialize Crew with the agent and task
+                crew = Crew(
+                    agents=[advisor_agent],
+                    tasks=[analysis_task],
+                    verbose=True
+                )
+                
+                # Kickoff the CrewAI process to get the investment decision
+                result = crew.kickoff()
+                st.subheader("Investment Decision")
+                st.write(result)
 
 if __name__ == "__main__":
     main()
