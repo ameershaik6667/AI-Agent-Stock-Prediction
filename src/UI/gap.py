@@ -91,14 +91,26 @@ class FinancialCrew:
             analyze_bollinger_data,
             buy_sell_decision,
             critique_agent_decisions,
+            revise_buy_sell_decisions,
+            critique_agent_decisions,
             revise_buy_sell_decisions
             ]
        
+        tasks_3critiques=[
+            analyze_bollinger_data,
+            buy_sell_decision,
+            critique_agent_decisions,
+            revise_buy_sell_decisions,
+            critique_agent_decisions,
+            revise_buy_sell_decisions,
+            critique_agent_decisions,
+            revise_buy_sell_decisions
+            ]
 
         # Kickoff CrewAI agents and tasks
         crew = crewai.Crew(
             agents=agents,
-            tasks=tasks_1critique,
+            tasks=tasks_3critiques,
             verbose=True,
             process=crewai.Process.sequential
         )
