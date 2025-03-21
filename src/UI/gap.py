@@ -59,8 +59,9 @@ class FinancialCrew:
         # Initialize agents
         bollinger_investment_advisor_agent = BollingerAnalysisAgent(llm=gpt_4o_high_tokens)
         bollinger_buy_sell_agent = BollingerBuySellAgent(ticker=self.ticker, llm=gpt_4o_high_tokens)
+        bollinger_critic_agent = BollingerBuySellCriticAgent(ticker=self.ticker, llm=gpt_4o_high_tokens)
 
-        agents = [bollinger_investment_advisor_agent, bollinger_buy_sell_agent]
+        agents = [bollinger_investment_advisor_agent, bollinger_buy_sell_agent, bollinger_critic_agent]
               
  
 
@@ -68,25 +69,36 @@ class FinancialCrew:
         # Create tasks for Bollinger Bands analysis        
         analyze_bollinger_data = bollinger_investment_advisor_agent.analyse_bollinger_data(bollinger_bands_data)
         buy_sell_decision = bollinger_buy_sell_agent.buy_sell_decision()
+        critique_agent_decisions = bollinger_critic_agent.critique_buy_sell_agent()
+        revise_buy_sell_decisions = bollinger_buy_sell_agent.revise_buy_sell_decision()
         with pd.option_context('display.max_rows', None, 'display.max_columns', None):
             print('buy sell signals \n', bollinger_data.get_buy_sell_signals_drop_hold())
 
         tasks_baseline=[           
             analyze_bollinger_data,
-            buy_sell_decision
+            buy_sell_decision            
              ]
 
 
-        tasks_feedback=[
+        tasks_1critique=[
             analyze_bollinger_data,
-            buy_sell_decision
+            buy_sell_decision,
+            critique_agent_decisions,
+            revise_buy_sell_decisions
+            ]
+        
+        tasks_2critiques=[
+            analyze_bollinger_data,
+            buy_sell_decision,
+            critique_agent_decisions,
+            revise_buy_sell_decisions
             ]
        
 
         # Kickoff CrewAI agents and tasks
         crew = crewai.Crew(
             agents=agents,
-            tasks=tasks_baseline,
+            tasks=tasks_1critique,
             verbose=True,
             process=crewai.Process.sequential
         )
