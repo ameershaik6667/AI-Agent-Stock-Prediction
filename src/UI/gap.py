@@ -4,6 +4,9 @@ load_dotenv()
 
 import os
 import sys
+import pandas as pd
+import datetime as dt
+
 import crewai as crewai
 #from crewai import Crew
 from textwrap import dedent
@@ -14,13 +17,11 @@ import crewai_tools as crewai_tools
 
 from src.Helpers.pretty_print_crewai_output import display_crew_output
 
-from src.Indicators.bollinger import BollingerBands  # Import BollingerBands class
-from src.Data_Retrieval.data_fetcher import DataFetcher  # Import DataFetcher class
-from src.Agents.Research.research_analyst_critic_agent import ResearchAnalysisCriticAgent
-from src.Agents.Research.research_analyst_agent import ResearchAnalystAgent
+from src.Indicators.bollinger import BollingerBands  
+from src.Data_Retrieval.data_fetcher import DataFetcher  
 from src.Agents.Research.bollinger_analysis_agent import BollingerAnalysisAgent
 from src.Agents.Research.bollinger_buy_sell_agent import BollingerBuySellAgent
-
+from src.Agents.Research.bollinger_buy_sell_critic_agent import BollingerBuySellCriticAgent
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -41,50 +42,42 @@ gpt_4o_high_tokens = lang_oai.ChatOpenAI(
 class FinancialCrew:
     def __init__(self, ticker):
         self.ticker = ticker
-        self.stock_data = DataFetcher().get_stock_data(ticker)
+        today = dt.datetime.today()
+        #start_date = dt.datetime(2014, 1, 1)
+        start_date = today - dt.timedelta(days=90)  # make sure inclusive
+        end_date = today        
+        self.stock_data = DataFetcher().get_stock_data(symbol=ticker, start_date=start_date, end_date=end_date )
 
     def run(self):
-        # Initialize agents
-        #stock_analysis_agents = StockAnalysisAgents()
-        
         # Bollinger Bands Data Calculation
         bollinger_data = BollingerBands(self.stock_data)
         bollinger_bands_data = bollinger_data.calculate_bands()
 
+        # Print signals manually
+        bollinger_data.manually_compute_buy_sell_hold_signals()
 
         # Initialize agents
-        research_analyst_agent = ResearchAnalystAgent(ticker=self.ticker, llm=gpt_4o_high_tokens)
-        research_analyst_critic_agent = ResearchAnalysisCriticAgent(llm=gpt_4o_high_tokens)
         bollinger_investment_advisor_agent = BollingerAnalysisAgent(llm=gpt_4o_high_tokens)
         bollinger_buy_sell_agent = BollingerBuySellAgent(ticker=self.ticker, llm=gpt_4o_high_tokens)
 
-        agents = [research_analyst_agent, research_analyst_critic_agent, bollinger_investment_advisor_agent, bollinger_buy_sell_agent]
+        agents = [bollinger_investment_advisor_agent, bollinger_buy_sell_agent]
               
  
 
 
         # Create tasks for Bollinger Bands analysis        
-        get_news = research_analyst_agent.get_scenarios_from_news()        
-        critique_research_analyst = research_analyst_critic_agent.critique_research_analyst_agent()
-        revise_report = research_analyst_agent.revise_report()
         analyze_bollinger_data = bollinger_investment_advisor_agent.analyse_bollinger_data(bollinger_bands_data)
         buy_sell_decision = bollinger_buy_sell_agent.buy_sell_decision()
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            print('buy sell signals \n', bollinger_data.get_buy_sell_signals_drop_hold())
 
-        tasks_baseline=[
-            get_news,
-            critique_research_analyst,
-            revise_report,
+        tasks_baseline=[           
             analyze_bollinger_data,
             buy_sell_decision
              ]
 
 
         tasks_feedback=[
-           get_news,
-            critique_research_analyst,
-            revise_report,
-            critique_research_analyst,
-            revise_report,
             analyze_bollinger_data,
             buy_sell_decision
             ]
