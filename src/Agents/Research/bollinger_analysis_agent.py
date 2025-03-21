@@ -31,15 +31,16 @@ class BollingerAnalysisAgent(BaseAgent):
         """
         description = dedent(f"""
             Analyze the provided Bollinger Bands data, which includes the Price, Upper Band and Lower Band data.
+                             
+            Treat each day as independent data. Start with the earliest date and progress one day at a time.
 
-            When price crosses the upper band from above, you issue a SELL signal.
-            When price crosses the lower band from below, you issue a BUY signal.
+            When price crosses below the upper band from above, you issue a SELL signal.
+            When price crosses above the lower band from below, you issue a BUY signal.
             Otherwise, you issue a HOLD signal.             
 
-            Bollinger Bands Data:
-            - Price: {bollinger_band_data['Close']}
-            - Upper Band: {bollinger_band_data['Upper Band']}
-            - Lower Band: {bollinger_band_data['Lower Band']}
+            Bollinger Bands pandas dataframe data: {bollinger_band_data}
+            Colunn names: Price is Close, Upper Band is Upper Band, Lower Band is Lower Band        
+
         """)
         # {bollinger_band_data['Upper Band'].iloc[-1]}
         # Creating and returning the Task object
