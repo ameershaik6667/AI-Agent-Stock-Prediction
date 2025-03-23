@@ -1,19 +1,12 @@
 import json
 import os
 
+from dotenv import load_dotenv
 from openai import OpenAI
 
-# Fetch the OpenAI API key from environment variables
-# openai_api_key = os.getenv("OPENAI_API_KEY")
-
-# if openai_api_key is None:
-#     raise ValueError("OpenAI API key is not set in environment variables!")
-
-# Initialize OpenAI Client
-client = OpenAI()
-
-# # API key for OpenAI
-# client.api_key = openai_api_key
+load_dotenv()
+api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=api_key)
 
 # Function to interact with ChatGPT and extract details from the query
 def use_openai(prompt):
