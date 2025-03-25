@@ -22,7 +22,7 @@ from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
 
 # Load environment variables (e.g., API keys) from a .env file
-load_dotenv()
+#load_dotenv()
 
 # =============================================================================
 # CrewAI Agent Code for Gann Investment Decision
