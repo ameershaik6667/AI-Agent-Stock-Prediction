@@ -1,5 +1,6 @@
 from crewai import Agent, Task
 from textwrap import dedent
+import pandas as pd
 
 from src.Agents.base_agent import BaseAgent
 
@@ -9,10 +10,10 @@ class BollingerAnalysisAgent(BaseAgent):
    def __init__(self, **kwargs):
         super().__init__(
             role='Bollinger Bands Investment Advisor',
-            goal="""Provide actionable buying or selling suggestions by analyzing Bollinger Bands data 
-            and determining whether the stock is overbought, oversold, or trending.""",
+            goal="""Provide buy, sell, hold signals by analyzing Bollinger Bands data.""",
             backstory="""As a highly skilled investment advisor, you're specialized in analyzing Bollinger Bands to
-            provide clear, actionable investment strategies for your clients.""",
+                        provide buy, sell, hold trading signals for your clients.""",
+            allow_delegation= False,
             verbose=True,
             **kwargs)
         
@@ -29,23 +30,25 @@ class BollingerAnalysisAgent(BaseAgent):
             Task: The task object for analyzing Bollinger Bands.
         """
         description = dedent(f"""
-            Analyze the provided Bollinger Bands data, which includes the Upper Band, Lower Band, 
-            and the Moving Average for the stock. Based on these indicators, assess whether the stock 
-            is overbought, oversold, or trending sideways. Additionally, provide insights into any 
-            trading opportunities that the bands might suggest.
+            Analyze the provided Bollinger Bands data, which includes the Price, Upper Band and Lower Band data.
+                             
+            Treat each day as independent data. Start with the earliest date and progress one day at a time.
 
-            Your final answer MUST be a comprehensive report discussing whether the stock is overbought 
-            or oversold based on the Bollinger Bands, along with any potential trading opportunities.
+            When price crosses below the upper band from above, you issue a SELL signal.
+            When price crosses above the lower band from below, you issue a BUY signal.
+            Otherwise, you issue a HOLD signal.             
 
-            Bollinger Bands Data:
-            - Upper Band: {bollinger_band_data['Upper Band'].iloc[-1]}
-            - Lower Band: {bollinger_band_data['Lower Band'].iloc[-1]}
-            - Moving Average: {bollinger_band_data['Moving Average'].iloc[-1]}
+            Bollinger Bands pandas dataframe data: {bollinger_band_data}
+            Colunn names: Price is Close, Upper Band is Upper Band, Lower Band is Lower Band        
+
         """)
-
+        # {bollinger_band_data['Upper Band'].iloc[-1]}
         # Creating and returning the Task object
         return Task(
             description=description,
             agent=self,
-            expected_output="A report analyzing the Bollinger Bands data with insights into potential trading opportunities."
+            expected_output="A table with daily BUY and SELL signals only. Ignore HOLD signals"
         )
+   
+
+

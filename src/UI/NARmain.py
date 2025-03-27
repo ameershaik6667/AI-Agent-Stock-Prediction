@@ -1,43 +1,37 @@
-# src/UI/main.py
+import os
 
+import yfinance as yf
 from crewai import Crew, Task
+from dotenv import load_dotenv
 
-from src.Agents.NARTaxRulesAgent import (PortfolioDataAgent,
-                                         ScenarioInputAgent,
-                                         SignalAnalysisAgent, TaxRulesAgent)
+from Agents.PortfolioDataAgent import PortfolioDataAgent
+from Agents.ScenarioInputAgent import ScenarioInputAgent
+from Agents.SignalAnalysisAgent import SignalAnalysisAgent
+from Agents.TaxRulesAgent import TaxRulesAgent
 
+load_dotenv()
+
+# Verify API key is loaded
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("OPENAI_API_KEY not found. Please set it in the .env file.")
+
+def get_current_price(symbol):
+    """Fetch the latest stock price from Yahoo Finance."""
+    try:
+        stock = yf.Ticker(symbol)
+        price = stock.history(period="1d")["Close"].iloc[-1]  # Get latest closing price
+        return round(price, 2) if not price is None else 0
+    except Exception as e:
+        print(f"Error fetching price for {symbol}: {e}")
+        return 0  # Default to 0 if fetching fails
 
 def main():
-    from crewai import Task
-
     # Create instances of agents
     portfolio_data_agent = PortfolioDataAgent()
     signal_analysis_agent = SignalAnalysisAgent()
     tax_rules_agent = TaxRulesAgent()
     scenario_input_agent = ScenarioInputAgent(portfolio_data_agent, signal_analysis_agent)
-
-    # Define Tasks with assigned agents
-    tax_analysis_task = Task(
-        description="Analyze tax implications based on jurisdiction.",
-        expected_output="A detailed tax analysis report.",
-        agent=tax_rules_agent  # Assigning the agent here
-    )
-
-    signal_generation_task = Task(
-        description="Generate trading signals based on user portfolio.",
-        expected_output="A list of buy/sell signals with reasoning.",
-        agent=signal_analysis_agent  # Assigning the agent here
-    )
-
-    scenario_analysis_task = Task(
-        description="Analyze different market scenarios.",
-        expected_output="A scenario impact assessment report.",
-        agent=scenario_input_agent  # Assigning the agent here
-    )
-
-    # Initialize Crew with agents and tasks
-    crew = Crew(agents=[portfolio_data_agent, signal_analysis_agent, tax_rules_agent, scenario_input_agent], 
-                tasks=[tax_analysis_task, signal_generation_task, scenario_analysis_task])
 
     # Collect user input for portfolio data
     user_input = {
@@ -51,6 +45,10 @@ def main():
         if symbol == 'DONE':
             break
         
+        # Fetch real-time stock price
+        current_price = get_current_price(symbol)
+        print(f"Current market price for {symbol}: ${current_price}")
+
         # Input validation for quantity and purchase price
         while True:
             quantity = input(f"Enter quantity for {symbol}: ")
@@ -73,39 +71,65 @@ def main():
         user_input["holdings"].append({
             "symbol": symbol,
             "quantity": quantity,
-            "purchase_price": purchase_price
+            "purchase_price": purchase_price,
+            "current_price": current_price  # Store real-time price
         })
 
-    # Select Task: Tax Analysis, Signal Generation, or Scenario Analysis
-    print("\nSelect Task:")
-    print("1. Tax Analysis")
-    print("2. Signal Generation")
-    print("3. Scenario Analysis")
-    task_choice = input("Enter choice (1-3): ")
+    while True:  # Loop to allow continuous execution
+        # Select Task: Tax Analysis, Signal Generation, or Scenario Analysis
+        print("\nSelect Task:")
+        print("1. Tax Analysis")
+        print("2. Signal Generation")
+        print("3. Scenario Analysis")
+        task_choice = input("Enter choice (1-3): ")
 
-    if task_choice == "1":
-        print("\nSelect Jurisdiction for Tax Calculation:")
-        print("1. US")
-        print("2. UK")
-        print("3. EU")
-        print("4. IN")
-        jurisdiction_map = {"1": "US", "2": "UK", "3": "EU", "4": "IN"}
-        jurisdiction_choice = input("Enter choice (1-4): ")
-        jurisdiction = jurisdiction_map.get(jurisdiction_choice, "US")
-        response = tax_rules_agent.execute(user_input, jurisdiction)
-    elif task_choice == "2":
-        user_query = "Generate trading signals"
-        response = scenario_input_agent.execute(user_query, user_input)
-    elif task_choice == "3":
-        user_query = "Analyze scenario impact"
-        response = scenario_input_agent.execute(user_query, user_input)
-    else:
-        print("Invalid choice. Exiting.")
-        return
+        if task_choice == "1":
+            print("\nSelect Jurisdiction for Tax Calculation:")
+            print("1. US")
+            print("2. UK")
+            print("3. EU")
+            print("4. IN")
+            jurisdiction_map = {"1": "US", "2": "UK", "3": "EU", "4": "IN"}
+            jurisdiction_choice = input("Enter choice (1-4): ")
+            jurisdiction = jurisdiction_map.get(jurisdiction_choice, "US")
+            response = tax_rules_agent.execute(user_input, jurisdiction)
 
-    # Display Response
-    print("\nResponse:")
-    print(response)
+        else:
+            # Define dynamic tasks based on user selection
+            tasks = []
+            
+            if task_choice == "2":  # Generate trading signals
+                task_description = f"Analyze the portfolio holdings: {user_input['holdings']} and generate trading signals using RSI, MACD, and moving averages to generate AI-powered signals."
+                task = Task(
+                    description=task_description,
+                    agent=signal_analysis_agent,
+                    expected_output="Buy/Sell/Hold signals along with recommendations and reasoning. No Need for rendering design/graphics."
+                )
+                tasks.append(task)
+
+            elif task_choice == "3":  # Scenario impact analysis
+                scenario = input("Describe the financial scenario for analysis: ")
+                task_description = f"Analyze the impact of '{scenario}' on the portfolio: {user_input['holdings']} using RSI, MACD, and moving averages to generate AI-powered signals."
+                task = Task(
+                    description=task_description,
+                    agent=scenario_input_agent,
+                    expected_output="A detailed impact analysis of the given financial scenario on portfolio performance.Buy/Sell/Hold signals along with recommendations and reasoning. No Need for rendering design/graphics."
+                )
+                tasks.append(task)
+
+            # Initialize CrewAI to process the tasks dynamically
+            crew = Crew(agents=[portfolio_data_agent, signal_analysis_agent, tax_rules_agent, scenario_input_agent], tasks=tasks)
+            response = crew.kickoff()
+
+        # Display Response
+        print("\nResponse:")
+        print(response)
+
+        # Ask user if they want to continue
+        continue_choice = input("\nDo you want to perform another task? (yes/no): ").strip().lower()
+        if continue_choice != "yes":
+            print("Exiting the program. Goodbye!")
+            break  # Exit loop if user chooses 'no'
 
 if __name__ == "__main__":
     main()
