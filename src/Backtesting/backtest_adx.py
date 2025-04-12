@@ -19,16 +19,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from src.Data_Retrieval.data_fetcher import DataFetcher
 from src.Indicators.adx_indicator import ADXIndicator
 
-import streamlit as st
-from datetime import datetime
-import logging
-import backtrader as bt
-import numpy as np
-import pandas as pd
-
-# Import your custom modules (adjust the paths as needed).
-from src.Data_Retrieval.data_fetcher import DataFetcher
-from src.Indicators.adx_indicator import ADXIndicator
 
 # Set up logging.
 logging.basicConfig(level=logging.INFO,
