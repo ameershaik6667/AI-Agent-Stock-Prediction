@@ -85,6 +85,62 @@ def get_stock_data(symbol, period="6mo"):
         logging.error(f"Error fetching stock data: {e}")
         return None
 
+def backtest_strategy(stock_data, strategy="moving_average"):
+    """Backtests a simple strategy based on historical stock data or a textual recommendation."""
+    try:
+        df = pd.DataFrame(stock_data["history"])
+
+        # Ensure 'Date' exists as a column
+        if "Date" not in df.columns:
+            df.index.name = "Date"
+            df.reset_index(inplace=True)
+
+        df["Date"] = pd.to_datetime(df["Date"])
+        df.set_index("Date", inplace=True)
+
+        df["Signal"] = 0  # Default = Hold
+
+        # NEW: if strategy is a recommendation string, set signals based on it
+        if isinstance(strategy, str) and strategy.lower() in ["buy", "sell", "hold"]:
+            rec = strategy.lower()
+            if rec == "buy":
+                df["Signal"] = 1
+            elif rec == "sell":
+                df["Signal"] = -1
+            else:
+                df["Signal"] = 0
+
+        # OLD STRATEGY LOGIC: moving average or RSI
+        elif strategy == "moving_average":
+            df["Signal"] = (
+                (df["50_MA"] > df["200_MA"]) & (df["50_MA"].shift(1) <= df["200_MA"].shift(1))
+            ).astype(int)
+            df["Signal"] = df["Signal"].where(df["Signal"] == 1, -(
+                (df["50_MA"] < df["200_MA"]) & (df["50_MA"].shift(1) >= df["200_MA"].shift(1))
+            ).astype(int))
+
+        elif strategy == "RSI":
+            df["Signal"] = df["RSI"].apply(lambda x: 1 if x < 30 else (-1 if x > 70 else 0))
+
+        # Continue with the rest of the logic
+        df["Position"] = df["Signal"].replace(to_replace=0, method="ffill")  # Maintain position
+        df["Daily Return"] = df["Close"].pct_change()
+        df["Strategy Return"] = df["Position"].shift(1) * df["Daily Return"]
+
+        total_return = df["Strategy Return"].sum()
+        cumulative_return = (1 + df["Strategy Return"]).cumprod().iloc[-1]
+
+        return {
+            "total_return_pct": round(total_return * 100, 2),
+            "cumulative_return_pct": round((cumulative_return - 1) * 100, 2),
+            "backtest_data": df.tail(10).to_dict(orient="records")
+        }
+
+    except Exception as e:
+        logging.error(f"Error during backtesting: {e}")
+        return None
+
+
 
 def fetch_market_sentiment(symbol):
     """Fetches news sentiment data using the correct Serper API endpoint."""
