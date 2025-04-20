@@ -9,6 +9,8 @@ from crewai import Agent, Crew, Task
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
 
+from Agents.bhbacktest import run_backtest
+
 # Suppress all warnings
 warnings.filterwarnings("ignore")
 
@@ -18,6 +20,10 @@ from Agents.binput import process_user_input
 # Function to interpret time frames
 def get_time_frame(query_time_frame):
     try:
+        # Make sure we're working with a string
+        if not isinstance(query_time_frame, str):
+            query_time_frame = str(query_time_frame)
+            
         today = datetime.today()
         if "end of this month" in query_time_frame.lower():
             end_of_month = today.replace(day=28) + timedelta(days=4)  # Approx last day
@@ -70,10 +76,16 @@ def get_stock_prediction(stock_symbol, percentage_change, start_date, end_date):
 
         # Apply Percentage Change (if given)
         predicted_price_adjusted = last_price * (1 + (percentage_change / 100))
-        
+       
         # Market Value Calculations
         initial_market_value = last_price * total_shares_outstanding
         final_market_value = predicted_price_adjusted * total_shares_outstanding
+        
+        # Prepare data for backtesting - use the complete stock data with OHLCV
+        full_stock_data = yf.download(stock_symbol, start=one_year_ago.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
+
+        backtest_results = run_backtest(full_stock_data)
+
 
         return {
             "stock_symbol": stock_symbol,
@@ -82,11 +94,15 @@ def get_stock_prediction(stock_symbol, percentage_change, start_date, end_date):
             "adjusted_predicted_price": float(predicted_price_adjusted),
             "initial_market_value": float(initial_market_value),
             "final_market_value": float(final_market_value),
+            "backtest": backtest_results,
+
         }
 
     except Exception as e:
         print(f"Error fetching stock data for {stock_symbol}: {e}")
         return {"error": str(e)}
+
+
 
 # CrewAI Agent for Stock Analysis
 stock_agent = Agent(
@@ -162,17 +178,21 @@ def run_stock_prediction(user_query):
 
 # CLI Interface
 def main():
-    print("📈 Stock Market Prediction CLI")
+    print(" Stock Market Prediction CLI")
     print("Enter your stock market prediction query and get future projections.")
     print("Example: 'What will be the market value of AAPL if it decreases by 5% by the end of this month?'\n")
 
     user_query = input("Enter your market prediction query: ")
 
-    print("\n🔄 Processing your request...\n")
+    print("\n Processing your request...\n")
     result, recommendation = run_stock_prediction(user_query)
     print(result)
     
-    print("\n📢 Investment Recommendation:" )
+    print("\nBacktest Results:")
+    print(json.dumps(result.get("backtest", {}), indent=4))
+
+    
+    print("\n Investment Recommendation:" )
     print(recommendation)
 
 if __name__ == "__main__":
