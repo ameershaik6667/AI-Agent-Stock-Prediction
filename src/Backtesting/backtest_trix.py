@@ -1,46 +1,56 @@
 #!/usr/bin/env python3
 import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 os.environ['MPLBACKEND'] = 'Agg'
 import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 plt.switch_backend("agg")
 
-import streamlit as st
-from datetime import datetime
 import logging
+import json
+import datetime as dt
+from datetime import datetime
+from textwrap import dedent
+from typing import Dict, List, Tuple
+
 import backtrader as bt
-import pandas as pd
-import sys
-from typing import Dict
-
-# Ensure project modules import correctly
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
-from src.Data_Retrieval.data_fetcher import DataFetcher
-from src.Agents.base_agent import BaseAgent
-
-# CrewAI + Pydantic + LLM
+from pydantic import BaseModel
+from langchain_openai import ChatOpenAI
 import crewai
 from crewai import Task, Crew, Process
-from pydantic import RootModel
-from textwrap import dedent
-from langchain_openai import ChatOpenAI
 
-# TRIX calculation import
+import streamlit as st
+from src.Data_Retrieval.data_fetcher import DataFetcher
 from src.Indicators.trix import calculate_trix
+from src.Agents.base_agent import BaseAgent
 
-# ----------------------------------------
-# TRIX Agent Output model & agent
-# ----------------------------------------
-class TrixBuySellAgentOutput(RootModel[Dict[str, str]]):
-    """RootModel so the agent can return a top-level date→signal map."""
+# ──────────────────────────────────────────────────────────
+# GLOBALS & DEFAULTS
+# ──────────────────────────────────────────────────────────
+SYMBOL = "AAPL"
+TRIX_DEFAULTS = {
+    "ticker":    SYMBOL,
+    "length":    14,
+    "signal":     9,
+    "allocation": 1.0
+}
+def dict_to_params(d): 
+    return tuple((k, v) for k, v in d.items())
+
+# ──────────────────────────────────────────────────────────
+# 1) Agent & Output Model
+# ──────────────────────────────────────────────────────────
+class TrixBuySellAgentOutput(BaseModel):
+    output: Dict[str, str]
 
 class TrixBuySellAgent(BaseAgent):
     def __init__(self, ticker="AAPL", llm=None, **kwargs):
         super().__init__(
             role=f"TRIX trader for {ticker}",
-            goal="Generate daily BUY/SELL/HOLD signals based on TRIX indicator data",
+            goal="Generate daily BUY/SELL/HOLD signals based on TRIX data",
             backstory="You are an expert TRIX technical analyst.",
             verbose=True,
             tools=[],
@@ -49,7 +59,6 @@ class TrixBuySellAgent(BaseAgent):
             **kwargs
         )
         self.ticker = ticker
-        logging.info(f"Initialized TrixBuySellAgent for {ticker}")
 
     def buy_sell_decision(self):
         return Task(
@@ -57,157 +66,190 @@ class TrixBuySellAgent(BaseAgent):
                 The global pandas DataFrame `data` has columns:
                   date, High, Low, Close, TRIX, TRIX_SIGNAL.
 
-                For each row, output exactly one of: BUY, SELL, or HOLD.
-                Return **only** a pure JSON object mapping YYYY-MM-DD → BUY/SELL/HOLD,
-                with no additional commentary or notes.
+                For **every** row in `data`—from the first date to the last—output exactly one of: BUY, SELL, or HOLD.
+                Return **only** a JSON object in this shape:
+                {{
+                  "output": {{
+                    "YYYY-MM-DD": "BUY" | "SELL" | "HOLD",
+                    … one entry per row of `data` …
+                  }}
+                }}
+                with no additional commentary.
             """),
             agent=self,
             output_json=TrixBuySellAgentOutput,
-            expected_output="Pure JSON dict mapping dates to BUY/SELL/HOLD."
+            expected_output="JSON under key `output` mapping each date in `data` to BUY/SELL/HOLD."
         )
 
-# single shared LLM
-gpt_llm = ChatOpenAI(model_name="gpt-4o", temperature=0.0, max_tokens=1500)
+# ──────────────────────────────────────────────────────────
+# 2) Crew Wrapper
+# ──────────────────────────────────────────────────────────
+class TrixCrew:
+    def __init__(self, ticker: str, df, length: int, signal: int):
+        self.ticker  = ticker
+        self.df      = df
+        self.length  = length
+        self.signal  = signal
+        self.llm     = ChatOpenAI(model_name="gpt-4o", temperature=0.0, max_tokens=1500)
 
-# ----------------------------------------
-# TRIX Indicator Wrapper for Backtrader
-# ----------------------------------------
-class TrixIndicatorBT(bt.Indicator):
-    lines = ('trix','trix_signal',)
-    params = (
-        ('length', 14),
-        ('signal', 9),
-    )
+    def run(self) -> str:
+        trix_df = calculate_trix(self.df.copy(),
+                                 length=self.length,
+                                 signal=self.signal)
+        globals()['data'] = trix_df.assign(date=trix_df.index)
+        agent = TrixBuySellAgent(ticker=self.ticker, llm=self.llm)
+        task  = agent.buy_sell_decision()
+        crew  = Crew(
+            agents=[agent],
+            tasks=[task],
+            verbose=True,
+            process=Process.sequential
+        )
+        crew.kickoff()
+        return task.output.json
+
+# ──────────────────────────────────────────────────────────
+# 3) Backtrader Indicator
+# ──────────────────────────────────────────────────────────
+class TrixCrewIndicator(bt.Indicator):
+    lines = ("signal_num",)
+    params = dict_to_params(TRIX_DEFAULTS)
+
     def __init__(self):
-        # TRIX requires length * 3 for triple EMA plus signal period
         self.addminperiod(self.p.length * 3 + self.p.signal)
+        df    = self.data._dataname
+        raw   = TrixCrew(self.p.ticker, df, self.p.length, self.p.signal).run()
+        sigs  = json.loads(raw)["output"]
+        mapper = {"BUY": 1, "HOLD": 0, "SELL": -1}
+        self.preds = [
+            mapper.get(sigs.get(d.strftime("%Y-%m-%d"), "HOLD"), 0)
+            for d in df.index
+        ]
 
     def once(self, start, end):
-        size = self.data.buflen()
-        # Build a DataFrame from the historical buffer with correct column names
-        df = pd.DataFrame({
-            'High':  [self.data.high[i] for i in range(size)],
-            'Low':   [self.data.low[i]  for i in range(size)],
-            'Close': [self.data.close[i] for i in range(size)],
-        })
-        # Align dates for JSON mapping (not used by calculate_trix)
-        df['date'] = pd.date_range(end=datetime.today(), periods=size, freq='D')
-        # Calculate TRIX and signal
-        res = calculate_trix(df, length=self.p.length, signal=self.p.signal)
-        # Assign indicator lines
-        for i in range(size):
-            self.lines.trix[i]        = res['TRIX'].iat[i]
-            self.lines.trix_signal[i] = res['TRIX_SIGNAL'].iat[i]
+        for i, v in enumerate(self.preds):
+            self.lines.signal_num[i] = v
 
-# ----------------------------------------
-# TRIX Strategy
-# ----------------------------------------
-class TrixStrategy(bt.Strategy):
-    params = (
-        ('length', 14),
-        ('signal', 9),
-        ('allocation', 1.0),
-    )
+# ──────────────────────────────────────────────────────────
+# 4) Strategy
+# ──────────────────────────────────────────────────────────
+Trade = Tuple[datetime, str, float]
+
+class TrixCrewAIStrategy(bt.Strategy):
+    params = dict_to_params(TRIX_DEFAULTS)
+
     def __init__(self):
-        self.trade_log = []
-        self.trix_ind = TrixIndicatorBT(self.data,
-                                        length=self.p.length,
-                                        signal=self.p.signal)
-        # Crossover indicator between TRIX and its signal line
-        self.crossover = bt.indicators.CrossOver(
-            self.trix_ind.trix,
-            self.trix_ind.trix_signal
+        self.trade_log: List[Trade] = []
+        self.ind        = TrixCrewIndicator(
+            self.data,
+            ticker=self.p.ticker,
+            length=self.p.length,
+            signal=self.p.signal
         )
+        self.signal_num = self.ind.signal_num
+        self.order      = None
+        self.pending    = None
+
+    def bullish_cross(self, prev, curr):
+        return prev <= 0 < curr
+
+    def bearish_cross(self, prev, curr):
+        return prev >= 0 > curr
+
+    def notify_order(self, order):
+        if order.status == order.Completed:
+            dt_date = self.data.datetime.date(0)
+            kind    = "BUY" if order.isbuy() else "SELL"
+            price   = order.executed.price
+            self.trade_log.append((dt_date, kind, price))
+            if self.pending:
+                cash, price = self.broker.getcash(), self.data.close[0]
+                size = int((cash/price)*0.95)
+                self.order = self.buy(size=size) if self.pending=="LONG" else self.sell(size=size)
+                self.pending = None
+        self.order = None
 
     def next(self):
-        dt    = self.datas[0].datetime.date(0)
-        close = self.data.close[0]
-        # Buy when TRIX crosses above its signal line
-        if not self.position and self.crossover > 0:
-            size = int((self.broker.getcash() * self.p.allocation) // close)
-            self.buy(size=size)
-            msg = f"{dt}: BUY {size} @ {close:.2f}"
-            self.trade_log.append(msg)
-            logging.info(msg)
-        # Sell when TRIX crosses below its signal line
-        elif self.position and self.crossover < 0:
-            size = self.position.size
-            self.sell(size=size)
-            msg = f"{dt}: SELL {size} @ {close:.2f}"
-            self.trade_log.append(msg)
-            logging.info(msg)
+        if self.order:
+            return
+        prev = self.signal_num[-1] if len(self.signal_num) > 1 else 0
+        curr = self.signal_num[0]
+        if self.bullish_cross(prev, curr):
+            if self.position.size < 0:
+                self.order, self.pending = self.close(), "LONG"
+            elif not self.position:
+                size = int((self.broker.getcash() / self.data.close[0]) * 0.95)
+                self.order = self.buy(size=size)
+        elif self.bearish_cross(prev, curr):
+            if self.position.size > 0:
+                self.order, self.pending = self.close(), "SHORT"
+            elif not self.position:
+                size = int((self.broker.getcash() / self.data.close[0]) * 0.95)
+                self.order = self.sell(size=size)
 
-# ----------------------------------------
-# Backtest runner (unchanged)
-# ----------------------------------------
-def run_backtest(strategy_class, data_feed, cash=10000, commission=0.001):
-    cerebro = bt.Cerebro()
-    cerebro.addstrategy(strategy_class)
-    cerebro.adddata(data_feed)
+# ──────────────────────────────────────────────────────────
+# 5) Backtest Runner
+# ──────────────────────────────────────────────────────────
+def run_backtest(strategy, feed, cash, commission):
+    cerebro = bt.Cerebro(runonce=True, preload=True)
+    cerebro.addstrategy(strategy)
+    cerebro.adddata(feed)
     cerebro.broker.setcash(cash)
     cerebro.broker.setcommission(commission)
-    cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', riskfreerate=0.01)
-    cerebro.addanalyzer(bt.analyzers.Returns,     _name='returns')
-    cerebro.addanalyzer(bt.analyzers.DrawDown,    _name='drawdown')
-    logging.info(f"Running {strategy_class.__name__}…")
+    cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe", riskfreerate=0.01)
+    cerebro.addanalyzer(bt.analyzers.Returns,     _name="returns")
+    cerebro.addanalyzer(bt.analyzers.DrawDown,    _name="drawdown")
+
     strat = cerebro.run()[0]
-    r     = strat.analyzers.returns.get_analysis()
-    d     = strat.analyzers.drawdown.get_analysis()
+    figs  = cerebro.plot(iplot=False)
+    fig   = figs[0][0]
+
+    ax = fig.axes[0]
+    for dt_date, kind, price in strat.trade_log:
+        marker = "^" if kind == "BUY" else "v"
+        color  = "g" if kind == "BUY" else "r"
+        ax.scatter(dt_date, price, marker=marker, s=120, color=color)
+
+    sr  = strat.analyzers.sharpe.get_analysis().get("sharperatio", 0.0)
+    rtn = strat.analyzers.returns.get_analysis().get("rtot", 0.0) * 100
+    dd  = strat.analyzers.drawdown.get_analysis().get("drawdown", 0.0) * 100
+
     summary = {
-      "Sharpe Ratio":          strat.analyzers.sharpe.get_analysis().get('sharperatio', 0),
-      "Total Return (%)":      r.get('rtot', 0) * 100,
-      "Avg Daily Return (%)":  r.get('ravg', 0) * 100,
-      "Max Drawdown (%)":      d.get('drawdown', 0) * 100
+        "Sharpe Ratio":     sr,
+        "Total Return (%)": rtn,
+        "Max Drawdown (%)": dd
     }
-    fig = cerebro.plot(iplot=False)[0][0]
-    return summary, strat.trade_log, fig
+    return summary, fig, strat.trade_log
 
-# ----------------------------------------
-# Streamlit + CrewAI integration
-# ----------------------------------------
+# ──────────────────────────────────────────────────────────
+# 6) Streamlit App
+# ──────────────────────────────────────────────────────────
 def main():
-    st.title("TRIX Backtest With CrewAI Signals")
-
-    st.sidebar.header("Backtest Parameters")
-    ticker     = st.sidebar.text_input("Ticker", "SPY")
-    sd         = st.sidebar.date_input("Start", datetime(2020, 1, 1).date())
-    ed         = st.sidebar.date_input("End",   datetime.today().date())
-    cash       = st.sidebar.number_input("Cash", 10000)
-    comm       = st.sidebar.number_input("Commission", 0.001, step=0.0001)
-    length     = st.sidebar.number_input("TRIX Length",    14, step=1)
-    signal     = st.sidebar.number_input("TRIX Signal",     9, step=1)
-    allocation = st.sidebar.number_input("Allocation",      1.0, step=0.01)
+    st.title("TRIX Backtest with CrewAI")
+    st.sidebar.header("Parameters")
+    ticker = st.sidebar.text_input("Ticker", SYMBOL)
+    sd     = st.sidebar.date_input("Start", datetime(2020,1,1).date())
+    ed     = st.sidebar.date_input("End",   datetime.today().date())
+    cash   = st.sidebar.number_input("Cash", 10000)
+    comm   = st.sidebar.number_input("Commission", 0.001, step=0.0001)
+    length = st.sidebar.number_input("TRIX Length", 14, step=1)
+    signal = st.sidebar.number_input("TRIX Signal", 9,  step=1)
 
     if st.sidebar.button("Run Backtest"):
-        # Fetch historical data
         df      = DataFetcher().get_stock_data(symbol=ticker, start_date=sd, end_date=ed)
-        # Calculate TRIX
-        trix_df = calculate_trix(df.copy(), length=length, signal=signal)
-
-        # CrewAI signals step
-        globals()['data'] = trix_df.assign(date=trix_df.index)
-        agent = TrixBuySellAgent(ticker=ticker, llm=gpt_llm)
-        task  = agent.buy_sell_decision()
-        crew  = Crew(agents=[agent], tasks=[task], verbose=True, process=Process.sequential)
-        crew.kickoff()
-
-        #st.subheader("CrewAI Signals (raw JSON)")
-        #st.code(task.output.json, language="json")
-
-        # Backtest
-        feed = bt.feeds.PandasData(dataname=df, fromdate=sd, todate=ed)
-        perf, trades, fig = run_backtest(TrixStrategy, feed, cash, comm)
+        feed    = bt.feeds.PandasData(dataname=df, fromdate=sd, todate=ed)
+        summary, fig, trades = run_backtest(TrixCrewAIStrategy, feed, cash, comm)
 
         st.subheader("Performance Summary")
-        st.write(perf)
+        st.json(summary)
 
         st.subheader("Trade Log")
-        for t in trades:
-            st.write(t)
+        for dt_date, kind, price in trades:
+            st.write(f"{dt_date} → **{kind}** @ {price:.2f}")
 
-        st.subheader("Chart")
+        st.subheader("Equity Curve with Trades")
         st.pyplot(fig)
 
-if __name__ == '__main__':
+if __name__=="__main__":
     logging.basicConfig(level=logging.INFO)
     main()
