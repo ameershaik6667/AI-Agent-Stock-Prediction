@@ -163,11 +163,11 @@ class CMOAnalysisAgent:
             ]
         )
 
-    def create_task(self, agent, cmo_df, current_price):
+    def create_task(self, agent, cmo_df, current_price, ticker='AAPL'):
         """Creates a task for the agent with the latest CMO value and current stock price."""
         latest_cmo = cmo_df['cmo'].iloc[-1]
         task_description = dedent(f"""
-            Please analyze the following data and provide a definitive investment recommendation:
+            Please analyze the following data for {ticker} and provide a definitive investment recommendation:
             - Current Stock Price: {current_price}
             - Latest CMO Value: {latest_cmo}
             
@@ -252,7 +252,7 @@ def main():
                 cmo_results = st.session_state.cmo_results
                 advisor = CMOAnalysisAgent()
                 agent = advisor.create_agent()
-                task = advisor.create_task(agent, cmo_results, current_price)
+                task = advisor.create_task(agent, cmo_results, current_price, ticker_symbol)
                 crew = Crew(agents=[agent], tasks=[task], verbose=True)
                 decision = crew.kickoff()  # Execute the Crew AI workflow
                 st.subheader("Investment Decision")
