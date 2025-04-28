@@ -13,7 +13,7 @@ import backtrader as bt
 import pandas as pd
 import sys
 import json
-from typing import Dict
+from typing import Dict, Literal
 
 # Ensure project modules import correctly
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -54,11 +54,17 @@ class DonchianCalculator:
         return self.df
 
 # ----------------------------------------
-# CrewAI output model & agent (unchanged)
+# Pydantic output model for signals
 # ----------------------------------------
-class DonchianBuySellAgent(RootModel[Dict[str, str]]):
-    """RootModel so the agent can return a top‐level date→signal map."""
+class SignalsModel(RootModel[Dict[str, Literal["BUY", "SELL", "HOLD"]]]):
+    """
+    A JSON object mapping YYYY-MM-DD → one of BUY / SELL / HOLD.
+    """
+    pass
 
+# ----------------------------------------
+# CrewAI Agent for Donchian signals
+# ----------------------------------------
 class DonchianBuySellAgent(BaseAgent):
     def __init__(self, ticker="AAPL", llm=None, **kwargs):
         super().__init__(
@@ -78,7 +84,7 @@ class DonchianBuySellAgent(BaseAgent):
         return Task(
             description=dedent(f"""
                 The global pandas DataFrame `data` has columns:
-                  date, high, low, close, donchian_upper, donchian_lower, donchian_mid.
+                  date, high, low, close, donchian_upper, donchian_lower, donchian_middle.
 
                 For each row, output exactly one of: BUY, SELL, or HOLD.
                 - BUY if close > donchian_upper
@@ -88,8 +94,8 @@ class DonchianBuySellAgent(BaseAgent):
                 **Output exactly a pure JSON object** mapping YYYY-MM-DD → BUY/SELL/HOLD, no commentary.
             """),
             agent=self,
-            output_json=DonchianBuySellAgentOutput,
-            expected_output="JSON mapping dates to BUY/SELL/HOLD"
+            expected_output="JSON mapping dates to BUY/SELL/HOLD",
+            output_json=SignalsModel,
         )
 
 # single shared LLM
@@ -140,7 +146,6 @@ class DonchianStrategy(bt.Strategy):
     def next(self):
         dt_str = self.datas[0].datetime.date(0).strftime('%Y-%m-%d')
         signal = self.signals.get(dt_str, 'HOLD')
-        #print('signal:', signal)
         price  = self.data.close[0]
 
         if signal == 'BUY' and not self.position:
@@ -193,12 +198,12 @@ def main():
     st.title("Donchian Channels Backtest + CrewAI Signals")
 
     st.sidebar.header("Backtest Parameters")
-    ticker   = st.sidebar.text_input("Ticker","SPY")
-    sd       = st.sidebar.date_input("Start", datetime(2020,1,1).date())
-    ed       = st.sidebar.date_input("End",   datetime.today().date())
-    cash     = st.sidebar.number_input("Cash",       10000)
-    comm     = st.sidebar.number_input("Commission",  0.001, step=0.0001)
-    period   = st.sidebar.number_input("Donchian Period",    20, step=1)
+    ticker = st.sidebar.text_input("Ticker", "SPY")
+    sd     = st.sidebar.date_input("Start", datetime(2020,1,1).date())
+    ed     = st.sidebar.date_input("End", datetime.today().date())
+    cash   = st.sidebar.number_input("Cash", 10000)
+    comm   = st.sidebar.number_input("Commission", 0.001, step=0.0001)
+    period = st.sidebar.number_input("Donchian Period", 20, step=1)
 
     if st.sidebar.button("Run Backtest"):
         # 1) Fetch data
@@ -209,9 +214,9 @@ def main():
 
         # 3) Get AI signals
         globals()['data'] = dc_df.assign(date=dc_df.index)
-        agent = DonchianBuySellAgent(ticker=ticker, llm=gpt_llm)
-        task  = agent.buy_sell_decision()
-        crew  = Crew(agents=[agent], tasks=[task], verbose=True, process=Process.sequential)
+        agent  = DonchianBuySellAgent(ticker=ticker, llm=gpt_llm)
+        task   = agent.buy_sell_decision()
+        crew   = Crew(agents=[agent], tasks=[task], verbose=True, process=Process.sequential)
         crew.kickoff()
         signals = json.loads(task.output.json)
 
