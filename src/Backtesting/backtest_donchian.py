@@ -56,15 +56,15 @@ class DonchianCalculator:
 # ----------------------------------------
 # CrewAI output model & agent (unchanged)
 # ----------------------------------------
-class IchimokuBuySellAgentOutput(RootModel[Dict[str, str]]):
+class DonchianBuySellAgent(RootModel[Dict[str, str]]):
     """RootModel so the agent can return a top‐level date→signal map."""
 
-class IchimokuBuySellAgent(BaseAgent):
+class DonchianBuySellAgent(BaseAgent):
     def __init__(self, ticker="AAPL", llm=None, **kwargs):
         super().__init__(
-            role=f"Ichimoku Cloud trader for {ticker}",
-            goal="Generate daily BUY/SELL/HOLD signals based on Ichimoku Cloud data",
-            backstory="You are an expert Ichimoku Cloud technical analyst.",
+            role=f"Donchian Channels trader for {ticker}",
+            goal="Generate daily BUY/SELL/HOLD signals based on Donchian Channels data",
+            backstory="You are an expert breakout strategist.",
             verbose=True,
             tools=[],
             allow_delegation=False,
@@ -72,22 +72,24 @@ class IchimokuBuySellAgent(BaseAgent):
             **kwargs
         )
         self.ticker = ticker
-        logging.info(f"Initialized IchimokuBuySellAgent for {ticker}")
+        logging.info(f"Initialized DonchianBuySellAgent for {ticker}")
 
     def buy_sell_decision(self):
         return Task(
             description=dedent(f"""
                 The global pandas DataFrame `data` has columns:
-                  date, high, low, close,
-                  dc_upper, dc_lower, dc_middle.
+                  date, high, low, close, donchian_upper, donchian_lower, donchian_mid.
 
                 For each row, output exactly one of: BUY, SELL, or HOLD.
-                Return **only** a pure JSON object mapping YYYY-MM-DD → BUY/SELL/HOLD,
-                with no additional commentary or notes.
+                - BUY if close > donchian_upper
+                - SELL if close < donchian_lower
+                - HOLD otherwise
+
+                **Output exactly a pure JSON object** mapping YYYY-MM-DD → BUY/SELL/HOLD, no commentary.
             """),
             agent=self,
-            output_json=IchimokuBuySellAgentOutput,
-            expected_output="Pure JSON dict mapping dates to BUY/SELL/HOLD."
+            output_json=DonchianBuySellAgentOutput,
+            expected_output="JSON mapping dates to BUY/SELL/HOLD"
         )
 
 # single shared LLM
@@ -132,11 +134,13 @@ class DonchianStrategy(bt.Strategy):
     def __init__(self):
         self.trade_log = []
         self.signals   = self.p.signals
+        print(f"Signals: {self.signals}")
         self.dc = DonchianIndicatorBT(self.data, period=self.p.period)
 
     def next(self):
         dt_str = self.datas[0].datetime.date(0).strftime('%Y-%m-%d')
         signal = self.signals.get(dt_str, 'HOLD')
+        #print('signal:', signal)
         price  = self.data.close[0]
 
         if signal == 'BUY' and not self.position:
@@ -205,7 +209,7 @@ def main():
 
         # 3) Get AI signals
         globals()['data'] = dc_df.assign(date=dc_df.index)
-        agent = IchimokuBuySellAgent(ticker=ticker, llm=gpt_llm)
+        agent = DonchianBuySellAgent(ticker=ticker, llm=gpt_llm)
         task  = agent.buy_sell_decision()
         crew  = Crew(agents=[agent], tasks=[task], verbose=True, process=Process.sequential)
         crew.kickoff()
