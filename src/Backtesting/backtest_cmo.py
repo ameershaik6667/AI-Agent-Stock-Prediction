@@ -194,7 +194,7 @@ class CMOStrategy(bt.Strategy):
         th = self.p.threshold
 
         # Buy when CMO crosses above +threshold
-        if not self.position and self.last_signal != 'BUY' and cmo_val > th:
+        if not self.position and  cmo_val > th:
             size = int((self.broker.getcash() * self.p.allocation) // close)
             if size:
                 self.buy(size=size)
