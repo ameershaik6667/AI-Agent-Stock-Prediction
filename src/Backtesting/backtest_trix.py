@@ -201,7 +201,8 @@ def run_backtest(strategy, feed, cash, commission):
     cerebro.addanalyzer(bt.analyzers.DrawDown,    _name="drawdown")
 
     strat = cerebro.run()[0]
-    figs  = cerebro.plot(iplot=False)
+    #figs  = cerebro.plot(iplot=False)
+    figs  = cerebro.plot()
     fig   = figs[0][0]
 
     ax = fig.axes[0]
