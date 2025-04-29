@@ -12,6 +12,7 @@ import logging
 import backtrader as bt
 import pandas as pd
 import sys
+import json
 from typing import Dict
 
 # Ensure project modules import correctly
@@ -157,7 +158,7 @@ class IchimokuIndicatorBT(bt.Indicator):
             self.lines.chikou_span[i]   = res['chikou_span'].iat[i]
 
 # ----------------------------------------
-# Ichimoku Strategy
+# Ichimoku Strategy driven by CrewAI signals
 # ----------------------------------------
 class IchimokuStrategy(bt.Strategy):
     params = (
@@ -167,9 +168,11 @@ class IchimokuStrategy(bt.Strategy):
         ('displacement', 26),
         ('smoothing_factor', 1),
         ('allocation', 1.0),
+        ('signals', {}),  # dict YYYY-MM-DD → BUY/SELL/HOLD
     )
     def __init__(self):
         self.trade_log = []
+        self.signals   = self.p.signals
         self.ichi = IchimokuIndicatorBT(self.data,
             tenkan_period=self.p.tenkan_period,
             kijun_period=self.p.kijun_period,
@@ -177,43 +180,51 @@ class IchimokuStrategy(bt.Strategy):
             displacement=self.p.displacement,
             smoothing_factor=self.p.smoothing_factor
         )
+
     def next(self):
-        dt    = self.datas[0].datetime.date(0)
-        close = self.data.close[0]
-        sa, sb = self.ichi.senkou_span_a[0], self.ichi.senkou_span_b[0]
-        top, bot = max(sa,sb), min(sa,sb)
-        if not self.position and close > top:
-            size = int((self.broker.getcash() * self.p.allocation)//close)
-            self.buy(size=size)
-            msg = f"{dt}: BUY {size} @ {close:.2f}"
-            self.trade_log.append(msg); logging.info(msg)
-        elif self.position and close < bot:
+        dt_str = self.datas[0].datetime.date(0).strftime('%Y-%m-%d')
+        signal = self.signals.get(dt_str, 'HOLD')
+        price  = self.data.close[0]
+
+        if signal == 'BUY' and not self.position:
+            size = int((self.broker.getcash() * self.p.allocation) // price)
+            if size:
+                self.buy(size=size)
+                msg = f"{dt_str}: BUY {size} @ {price:.2f}"
+                self.trade_log.append(msg)
+                logging.info(msg)
+
+        elif signal == 'SELL' and self.position:
             size = self.position.size
             self.sell(size=size)
-            msg = f"{dt}: SELL {size} @ {close:.2f}"
-            self.trade_log.append(msg); logging.info(msg)
+            msg = f"{dt_str}: SELL {size} @ {price:.2f}"
+            self.trade_log.append(msg)
+            logging.info(msg)
+        # HOLD → do nothing
 
 # ----------------------------------------
-# Backtest runner
+# Backtest runner (accepts strategy kwargs)
 # ----------------------------------------
-def run_backtest(strategy_class, data_feed, cash=10000, commission=0.001):
+def run_backtest(strategy_class, data_feed, cash=10000, commission=0.001, **strategy_kwargs):
     cerebro = bt.Cerebro()
-    cerebro.addstrategy(strategy_class)
+    cerebro.addstrategy(strategy_class, **strategy_kwargs)
     cerebro.adddata(data_feed)
     cerebro.broker.setcash(cash)
     cerebro.broker.setcommission(commission)
-    cerebro.addanalyzer(bt.analyzers.SharpeRatio,_name='sharpe',riskfreerate=0.01)
-    cerebro.addanalyzer(bt.analyzers.Returns,    _name='returns')
-    cerebro.addanalyzer(bt.analyzers.DrawDown,   _name='drawdown')
+    cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', riskfreerate=0.01)
+    cerebro.addanalyzer(bt.analyzers.Returns,     _name='returns')
+    cerebro.addanalyzer(bt.analyzers.DrawDown,    _name='drawdown')
+
     logging.info(f"Running {strategy_class.__name__}…")
     strat = cerebro.run()[0]
+
     r = strat.analyzers.returns.get_analysis()
     d = strat.analyzers.drawdown.get_analysis()
     summary = {
-      "Sharpe Ratio": strat.analyzers.sharpe.get_analysis().get('sharperatio',0),
-      "Total Return (%)":   r.get('rtot',0)*100,
+      "Sharpe Ratio":         strat.analyzers.sharpe.get_analysis().get('sharperatio',0),
+      "Total Return (%)":     r.get('rtot',0)*100,
       "Avg Daily Return (%)": r.get('ravg',0)*100,
-      "Max Drawdown (%)":    d.get('drawdown',0)*100
+      "Max Drawdown (%)":     d.get('drawdown',0)*100
     }
     fig = cerebro.plot(iplot=False)[0][0]
     return summary, strat.trade_log, fig
@@ -222,22 +233,25 @@ def run_backtest(strategy_class, data_feed, cash=10000, commission=0.001):
 # Streamlit + CrewAI integration
 # ----------------------------------------
 def main():
-    st.title("Ichimoku Backtest + CrewAI Signals")
+    st.title("Ichimoku Backtest With CrewAI Signals")
 
     st.sidebar.header("Backtest Parameters")
     ticker   = st.sidebar.text_input("Ticker","SPY")
-    sd       = st.sidebar.date_input("Start",datetime(2020,1,1).date())
-    ed       = st.sidebar.date_input("End",  datetime.today().date())
-    cash     = st.sidebar.number_input("Cash",10000)
-    comm     = st.sidebar.number_input("Commission",0.001,step=0.0001)
-    tenkan   = st.sidebar.number_input("Tenkan-sen",9,step=1)
-    kijun    = st.sidebar.number_input("Kijun-sen",26,step=1)
-    senkou_b = st.sidebar.number_input("Senkou B",52,step=1)
-    displ    = st.sidebar.number_input("Displacement",26,step=1)
-    smooth   = st.sidebar.number_input("Smoothing",1,step=1)
+    sd       = st.sidebar.date_input("Start", datetime(2020,1,1).date())
+    ed       = st.sidebar.date_input("End",   datetime.today().date())
+    cash     = st.sidebar.number_input("Cash",       10000)
+    comm     = st.sidebar.number_input("Commission",  0.001, step=0.0001)
+    tenkan   = st.sidebar.number_input("Tenkan-sen",    9, step=1)
+    kijun    = st.sidebar.number_input("Kijun-sen",    26, step=1)
+    senkou_b = st.sidebar.number_input("Senkou B",     52, step=1)
+    displ    = st.sidebar.number_input("Displacement", 26, step=1)
+    smooth   = st.sidebar.number_input("Smoothing",     1, step=1)
 
     if st.sidebar.button("Run Backtest"):
-        df = DataFetcher().get_stock_data(symbol=ticker,start_date=sd,end_date=ed)
+        # 1) Fetch data
+        df = DataFetcher().get_stock_data(symbol=ticker, start_date=sd, end_date=ed)
+
+        # 2) Calculate Ichimoku lines
         ich_df = IchimokuCalculator(df,
             tenkan_period=tenkan,
             kijun_period=kijun,
@@ -246,23 +260,37 @@ def main():
             smoothing_factor=smooth
         ).calculate()
 
-        # CrewAI step
+        # 3) Get AI signals
         globals()['data'] = ich_df.assign(date=ich_df.index)
         agent = IchimokuBuySellAgent(ticker=ticker, llm=gpt_llm)
         task  = agent.buy_sell_decision()
-        crew  = Crew(agents=[agent],tasks=[task],verbose=True,process=Process.sequential)
+        crew  = Crew(agents=[agent], tasks=[task], verbose=True, process=Process.sequential)
         crew.kickoff()
+        signals = json.loads(task.output.json)
 
         st.subheader("CrewAI Signals (raw JSON)")
         st.code(task.output.json, language="json")
 
-        feed = bt.feeds.PandasData(dataname=df,fromdate=sd,todate=ed)
-        perf, trades, fig = run_backtest(IchimokuStrategy,feed,cash,comm)
+        # 4) Backtest using AI signals
+        feed = bt.feeds.PandasData(dataname=df, fromdate=sd, todate=ed)
+        perf, trades, fig = run_backtest(
+            IchimokuStrategy,
+            feed,
+            cash=cash,
+            commission=comm,
+            tenkan_period=tenkan,
+            kijun_period=kijun,
+            senkou_b_period=senkou_b,
+            displacement=displ,
+            smoothing_factor=smooth,
+            signals=signals
+        )
 
         st.subheader("Performance Summary")
         st.write(perf)
         st.subheader("Trade Log")
-        for t in trades: st.write(t)
+        for t in trades:
+            st.write(t)
         st.subheader("Chart")
         st.pyplot(fig)
 
