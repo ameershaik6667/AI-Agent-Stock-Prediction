@@ -13,10 +13,10 @@ from openai import OpenAI
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.Agents.functions import (RNNModel, calculate_indicators,
-                                  extract_stock_symbol, forward_test,
-                                  generate_prompt, get_stock_data,
-                                  prepare_data, train_model)
+from src.Agents.hafunctions import (RNNModel, calculate_indicators,
+                                    extract_stock_symbol, forward_test,
+                                    generate_prompt, get_stock_data,
+                                    prepare_data, train_model)
 
 # Load environment variables
 load_dotenv()

@@ -1,9 +1,11 @@
 
+import re
+
 from crewai import Agent, Crew, Task
 
-from src.Agents.bagents import (analyze_market_data, extract_stock_symbol,
-                                fetch_market_sentiment, get_stock_data,
-                                visualize_stock_data)
+from src.Agents.bagents import (analyze_market_data, backtest_strategy,
+                                extract_stock_symbol, fetch_market_sentiment,
+                                get_stock_data, visualize_stock_data)
 
 # Define Agents
 analysis_agent = Agent(
@@ -66,3 +68,15 @@ if __name__ == "__main__":
         
         print("\nAnalysis Result:\n", result)
         print("\n" + "-" * 50)
+        
+
+        rec_match = re.search(r"\b(Buy|Sell|Hold)\b", str(result), re.IGNORECASE)
+        recommendation = rec_match.group(1) if rec_match else "Hold"
+
+        backtest_result = backtest_strategy(stock_data, strategy=recommendation)
+        if backtest_result:
+            print(f"\n Backtest Result:\n"
+                f"Total Return: {backtest_result['total_return_pct']}%\n"
+                f"Cumulative Return: {backtest_result['cumulative_return_pct']}%\n")
+        else:
+            print("\nBacktesting failed.")
