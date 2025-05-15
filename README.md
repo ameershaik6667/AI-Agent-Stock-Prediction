@@ -13,7 +13,12 @@ or
 ```
 
 
-## Installation
+## Recommended Installation
+
+Use a github codespace
+
+
+## Local Installation
 ```sh
 conda env create -f conda_env.yml
 ```
