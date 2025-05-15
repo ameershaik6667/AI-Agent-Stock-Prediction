@@ -10,11 +10,11 @@ They backtest the trading system using AI agents against the classical system.
 
 
 ```sh
-(stocks) jglossner@jglossner:~/GitRepos/AI-Agent-Stock-Prediction$ streamlit run src/UI/app.py
+~/AI-Agent-Stock-Prediction/src/Backtesting$ uv run streamlit run backtest_adx.py
 ```
 or
 ```sh
-(stocks) jglossner@jglossner:~/GitRepos/AI-Agent-Stock-Prediction$ python -m src.UI.gap
+~/AI-Agent-Stock-Prediction$ python -m src.UI.gap
 ```
 
 
@@ -23,27 +23,125 @@ or
 Use a github codespace
 
 
-## Local Installation
+## 
 
-### Install Anaconda
+## Local Windows
 
-Install [Anaconda Python](https://www.anaconda.com/download).
+### Install WSL and Ubuntu24.04
 
-or an alternative for Linux:
+https://learn.microsoft.com/en-us/windows/wsl/install
 
-```sh
-wget --no-check-certificate https://repo.anaconda.com/archive/Anaconda3-2024.10-1-Linux-x86_64.sh -O /tmp/anaconda.sh && \
-    sudo bash /tmp/anaconda.sh -b -p /opt/conda && \
-    rm /tmp/anaconda.sh
-export PATH="/opt/conda/bin:$PATH"
-```
+open PowerShell in admin mode (right click on program)
+`wsl --install -d Ubuntu-24.04`
 
-### Create conda environment
-```sh
-conda env create -f conda_env.yml
-conda init
-conda activate stocks
-```
+To see all the available Linux distributions
+
+`wsl --list --online`
+
+reboot your machine
+
+
+
+### Install Docker Desktop
+
+https://docs.docker.com/desktop/setup/install/windows-install/
+
+reboot 
+
+start Docker desktop and configure it to start on Windows boot (Settings->General)
+
+
+
+### Open Ubuntu in WSL
+
+In Windows search, type Ubuntu and select Ubuntu-24.04
+
+create your userid
+
+create a password  <---- DON'T FORGET IT
+
+
+
+### Follow the Install Linux Software Instructions
+
+From here, the directions for Linux and Windows running Linux are the same except where noted.
+
+
+
+# Install Linux Software (in Ubuntu or WSL Ubuntu)
+
+`sudo apt update && sudo apt install -y \
+    software-properties-common \
+    curl \
+    zip \
+    unzip \
+    tar \
+    ca-certificates \
+    git \
+    wget \
+    build-essential \
+    vim \
+    jq \
+    firefox \  
+    wslu \
+    && sudo apt clean`
+
+
+
+### Install uv and venv
+
+https://docs.astral.sh/uv/#installation
+
+`curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+
+
+### Install Microsoft Visual Studio Code
+
+https://code.visualstudio.com/sha/download
+
+
+
+### Clone the Repository
+
+`git clone https://github.com/Rivier-Computer-Science/Adaptive-Learning.git`
+
+cd into Adaptive-Learning and initialize a venv environment
+
+`uv venv --python 3.12`
+
+Activate the environment
+
+`source .venv/bin/activate`
+
+
+
+### Install Python requirements.txt
+
+`uv pip install -r requirements.txt`
+
+
+
+### Set up the Default Browser for Windows Display
+
+Note: Linux users should not need to perform this step.
+
+If your Windows browser does not open automatically:
+
+Option 1: All http requests use the Windows browser:
+`sudo apt install wslu
+echo 'export BROWSER=wsluview' >> ~/.bashrc`
+
+Option 2: Only this project uses the Windows browser:
+
+`sudo apt install wslu`
+
+echo 'export BOKEH_BROWSER=wsluview' >> ~/.bashrc`
+
+Option 3: Run the browser from within Ubuntu: :
+`echo 'export BOKEH_BROWSER=firefox' >> ~/.bashrc`
+
+
 
 ## Set Environment Variables
 
@@ -65,3 +163,7 @@ Download the [chromedriver](https://googlechromelabs.github.io/chrome-for-testin
 Place it is a folder named chromedriver in the root directory. This will not be on github because some students need Linux or MAC versions.
 
 Note that it must match the version of Chrome on your computer. You can check it by starting the Chrome browser. Then navigate to on your browser to the top right 3 dots, help->About Chrome. 
+
+### Execute the Code
+
+`uv run python -m src.UI.panel_gui_tabs_jg`
