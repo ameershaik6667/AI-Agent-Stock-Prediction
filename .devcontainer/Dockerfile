@@ -17,6 +17,7 @@ RUN apt update && apt install -y \
     build-essential \
     vim \
     jq \
+    firefox \
     && apt clean
 
 
