@@ -104,7 +104,7 @@ https://code.visualstudio.com/sha/download
 
 ### Clone the Repository
 
-`git clone https://github.com/Rivier-Computer-Science/Adaptive-Learning.git`
+`git clone https://github.com/Rivier-Computer-Science/AI-Agent-Stock-Prediction.git`
 
 cd into Adaptive-Learning and initialize a venv environment
 
@@ -164,6 +164,3 @@ Place it is a folder named chromedriver in the root directory. This will not be 
 
 Note that it must match the version of Chrome on your computer. You can check it by starting the Chrome browser. Then navigate to on your browser to the top right 3 dots, help->About Chrome. 
 
-### Execute the Code
-
-`uv run python -m src.UI.panel_gui_tabs_jg`
