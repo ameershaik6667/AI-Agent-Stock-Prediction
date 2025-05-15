@@ -10,7 +10,7 @@ dependencies:
   - pip:
       - backtrader
       - backtrader[plotting]
-      - crewai==0.95.0
+      - crewai
       - crewai-tools
       - fredapi
       - langchain
