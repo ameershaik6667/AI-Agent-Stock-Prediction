@@ -1,15 +1,20 @@
 # AI-Agent-Stock-Prediction
 
+This code is from Rivier University COMP-699 Professional Seminar student projects.
+
+They create a classical trading system (e.g., 50/200 SMA cross) and then enhance it with multiple AI agents.
+
+They backtest the trading system using AI agents against the classical system.
+
 ## Executing the Code
 
-There are two programs that are not yet integrated. From the root directory run:
 
 ```sh
 (stocks) jglossner@jglossner:~/GitRepos/AI-Agent-Stock-Prediction$ streamlit run src/UI/app.py
 ```
 or
 ```sh
-(stocks) jglossner@jglossner:~/GitRepos/AI-Agent-Stock-Prediction$ python -m src.UI.scenario
+(stocks) jglossner@jglossner:~/GitRepos/AI-Agent-Stock-Prediction$ python -m src.UI.gap
 ```
 
 
@@ -19,55 +24,25 @@ Use a github codespace
 
 
 ## Local Installation
-```sh
-conda env create -f conda_env.yml
-```
 
-
-## Manual Installation (not recommended)
+### Install Anaconda
 
 Install [Anaconda Python](https://www.anaconda.com/download).
 
+or an alternative for Linux:
+
 ```sh
-conda create -n stocks python=3.12 anaconda
+wget --no-check-certificate https://repo.anaconda.com/archive/Anaconda3-2024.10-1-Linux-x86_64.sh -O /tmp/anaconda.sh && \
+    sudo bash /tmp/anaconda.sh -b -p /opt/conda && \
+    rm /tmp/anaconda.sh
+export PATH="/opt/conda/bin:$PATH"
+```
+
+### Create conda environment
+```sh
+conda env create -f conda_env.yml
+conda init
 conda activate stocks
-```
-
-## Install yfinance and langchain
-
-```sh
-conda install langchain langchain-community
-conda install -c conda-forge yfinance
-conda update --all
-```
-
-## Install CrewAI
-
-If you are running on Windows, [download Visual Studio](https://visualstudio.microsoft.com/downloads/). You need a c++ compiler to generate the wheels for crewai. Minimally, [you must have buildtools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) installed. If you've already installed Visual Studio, you do not need to separately install build tools.
-
-Documentation for [CrewAI](https://docs.crewai.com/getting-started/Installing-CrewAI/).
-
-
-```sh
-conda config --set pip_interop_enabled True
-conda install openai unstructured
-pip install crewai crewai-tools pandas_ta  sec_api
-```
-
-## Install faiss
-If you have an nVidia GPU
-```sh
-conda install -c conda-forge faiss-gpu
-```
-Else
-```sh
-conda install -c conda-forge faiss-cpu
-```
-
-## newspaper3k and supporting libraries
-```sh
-conda install newspaper3k
-pip install lxml_html_clean
 ```
 
 ## Set Environment Variables
@@ -85,18 +60,8 @@ Note: for Windows use *set* instead of *export*
 
 ## Set up Selenium and the Chromium webdriver
 
-```sh
-conda install selenium
-```
-
 Download the [chromedriver](https://googlechromelabs.github.io/chrome-for-testing/#stable) from the stable channel.
 
 Place it is a folder named chromedriver in the root directory. This will not be on github because some students need Linux or MAC versions.
 
-Note that it must match the version of Chrome on your computer. You can check it by starting the Chrome browser. Then navigate to on your browser to the top right 3 dots, help->About Chrome. It should say 128.xxxxx.
-
-## Set up back testing 
-
-```sh
-pip install backtrader backtrader[plotting]
-```
+Note that it must match the version of Chrome on your computer. You can check it by starting the Chrome browser. Then navigate to on your browser to the top right 3 dots, help->About Chrome. 

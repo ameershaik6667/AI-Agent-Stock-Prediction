@@ -1,7 +1,13 @@
 import crewai as crewai
 from textwrap import dedent
+from pydantic import BaseModel
+from typing import Dict
 from src.Agents.base_agent import BaseAgent
 import logging
+
+class BuySellOutput(BaseModel):
+    output: Dict[str,str]
+
 
 class BollingerBuySellAgent(BaseAgent):
     def __init__(self, ticker="AAPL", **kwargs):
@@ -25,15 +31,18 @@ class BollingerBuySellAgent(BaseAgent):
 
                 Similar to a backtest, consider each day independently as a new decision.
                     Start with the earliest date and advance one day to determine each signal.
-                    
+                
                 Output a signal as a date and a single word: BUY, SELL, or HOLD.
+
+                **IMPORTANT**: Do not drop any date entries. There should be 1 signal for each day in the data.                    
 
                 Highlight signals you changed from the standard bollinger signals.
                               
                 If you predict correctly, you get to keep a 10% commission on profits.                                          
             """),
             agent=self,
-            expected_output=f"A table with buy, sell, or hold decision signals for each day of data {self.ticker}"
+            output_json=BuySellOutput,
+            expected_output=f"A json dictionary with buy, sell, or hold decision signals for each day of data {self.ticker}"
         )
     
     def revise_buy_sell_decision(self):
@@ -42,10 +51,11 @@ class BollingerBuySellAgent(BaseAgent):
                 Based on the critique of the trading signals provied for {self.ticker},
                     improve the buy, sell, hold signals.
 
-                Highlight signals you changed from the standard bollinger signals.
+                Do not drop any date entries.
                               
                 If you predict correctly, you get to keep a 10% commission on profits.                                          
             """),
             agent=self,
-            expected_output=f"A table with buy, sell, or hold decision signals for each day of data {self.ticker}"
+            output_json=BuySellOutput,
+            expected_output=f"A json dictionary with buy, sell, or hold decision signals for each day of data {self.ticker}"
         )

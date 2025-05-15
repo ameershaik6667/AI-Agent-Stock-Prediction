@@ -1,0 +1,20 @@
+backtrader
+backtrader[plotting]
+crewai
+crewai-tools
+faiss-cpu
+fredapi
+langchain
+langchain-community
+lxml-html-clean
+newspaper3k
+numpy<2,>=1.26  #later versions are not compatible with pandas_ta
+openai
+pandas-ta
+protobuf<4,>=3.19.0   #streamlit requires a specific protobuf
+pydantic
+selenium
+sec-api
+streamlit>1.34,<2   
+unstructured    
+yfinance  
