@@ -14,7 +14,7 @@ They backtest the trading system using AI agents against the classical system.
 ```
 or
 ```sh
-~/AI-Agent-Stock-Prediction$ python -m src.UI.gap
+~/AI-Agent-Stock-Prediction$ uv run python -m src.UI.gap
 ```
 
 

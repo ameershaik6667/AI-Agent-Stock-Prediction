@@ -2,6 +2,7 @@ backtrader
 backtrader[plotting]
 crewai
 crewai-tools
+dotenv
 faiss-cpu
 fredapi
 langchain
