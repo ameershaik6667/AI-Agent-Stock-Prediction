@@ -12,11 +12,6 @@ or
 (stocks) jglossner@jglossner:~/GitRepos/AI-Agent-Stock-Prediction$ python -m src.UI.scenario
 ```
 
-Typical scenario prediction output
-![Example Scenario Prediction](pics/scenario_prediction.png "Scenario Prediction")
-
-Typical cost to run the scenario prediction
-![Scenario Prediction Costs](pics/scenario_costs.png "Scenario Prediction Costs")
 
 ## Installation
 ```sh
